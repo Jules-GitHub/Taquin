@@ -20,111 +20,90 @@ def pos_vide(tab):
     return np.where(tab == 0)[0][0]
 
 
-def move_possible(tab):
+def move_possible(tab, precedent=-1):
     n  = int(sqrt(len(tab)))
     pos = pos_vide(tab)
     choixPossibles = []
-    if pos >= n : choixPossibles.append(0)
-    if pos < len(tab) - n : choixPossibles.append(1)
-    if pos%n < n-1 : choixPossibles.append(2)
-    if pos%n > 0 : choixPossibles.append(3)
+    if pos >= n and precedent != 1 :            choixPossibles.append(0)
+    if pos < len(tab) - n and precedent != 0 :  choixPossibles.append(1)
+    if pos%n < n-1 and precedent != 3:          choixPossibles.append(2)
+    if pos%n > 0 and precedent != 2 :           choixPossibles.append(3)
     return choixPossibles
 
 
 def creation_donnees(repetition, profondeurPartie, n):
     train_parties, train_move = [], []
+    move = -1
     for i in range(repetition):
         partie = init(n)
+        pos = 15
         for j in range(profondeurPartie):
-            move = choice(move_possible(partie))
-            partie = jeu(partie, move)
-            train_parties.append(partie)
+            move = choice(move_possible(partie, move))
+            partie, pos = jeu(partie, move, pos)
             goal = [0, 0, 0, 0]
             goal[[1, 0, 3, 2][move]] = 1
+            train_parties.append(partie.copy())
             train_move.append(goal)
     return np.array(train_parties), np.array(train_move)
 
 
-"""
-init -> la grille de base
-
-creation données samples_num partie_depth
-    train_x = []
-    train_y = []
-    for i in range samples_num//partie_depth
-        partie = init()
-        for p in range partie_depth
-            move = random 0-3
-            
-            train_x += [partie]
-            goal = [0, 0, 0, 0]
-            goal[[1, 0, 3, 2][move]] = 1
-            train_y += [goal]
-
-            modifie partie move
-"""
-
-def melange_jeu(tab, profondeur):
+def melange_jeu(tab, profondeur, pos):
     for i in range(profondeur):
-        tab = jeu(tab, choice(move_possible(tab)))
-    return tab
+        tab, pos = jeu(tab, choice(move_possible(tab)), pos)
+    return tab, pos
 
 
-def jeu(tab, choix):
-    pos = pos_vide(tab)
+def jeu(tab, choix, pos):
     if choix in move_possible(tab):
         if choix == 0:
             n  = int(sqrt(len(tab)))
             tab[pos], tab[pos-n] = tab[pos-n], tab[pos]
+            pos -= n
         elif choix == 1:
             n  = int(sqrt(len(tab)))
             tab[pos], tab[pos+n] = tab[pos+n], tab[pos]
+            pos += n
         elif choix == 2:
             tab[pos], tab[pos+1] = tab[pos+1], tab[pos]
+            pos += 1
         elif choix == 3:
             tab[pos], tab[pos-1] = tab[pos-1], tab[pos]
-    return tab
+            pos -= 1
+    return tab, pos
+
+def train():
+    model = tf.keras.Sequential()
+
+    model.add(tf.keras.layers.Flatten(input_shape=(16,)))
+    model.add(tf.keras.layers.Dense(256, activation=tf.math.sigmoid))
+    model.add(tf.keras.layers.Dense(128, activation=tf.math.sigmoid))
+    model.add(tf.keras.layers.Dense(128, activation=tf.math.sigmoid))
+    model.add(tf.keras.layers.Dense(64, activation=tf.math.sigmoid))
+    model.add(tf.keras.layers.Dense(64, activation=tf.math.sigmoid))
+    model.add(tf.keras.layers.Dense(64, activation=tf.math.sigmoid))
+    model.add(tf.keras.layers.Dense(16, activation=tf.math.sigmoid))
+    model.add(tf.keras.layers.Dense(4, activation=tf.nn.softmax))
+
+    model.compile(optimizer=tf.keras.optimizers.Adam(), loss=tf.keras.losses.CategoricalCrossentropy(), metrics=[])
 
 
-model = tf.keras.Sequential()
+    for i in range(20):
+        print("n°",i)
+        inData, outData = creation_donnees(10000, 20, 4)
+        model.fit(inData, outData, epochs=2)
 
-model.add(tf.keras.layers.Flatten(input_shape=(16,)))
-model.add(tf.keras.layers.Dense(128, activation=tf.math.sigmoid))
-model.add(tf.keras.layers.Dense(64, activation=tf.math.sigmoid))
-model.add(tf.keras.layers.Dense(32, activation=tf.math.sigmoid))
-model.add(tf.keras.layers.Dense(16, activation=tf.math.sigmoid))
-model.add(tf.keras.layers.Dense(4, activation=tf.nn.softmax))
+    return model
 
-model.compile(optimizer=tf.keras.optimizers.Adam(), loss=tf.keras.losses.CategoricalCrossentropy(), metrics=[])
-
-inData, outData = creation_donnees(5000, 20, 4)
-
-model.fit(inData, outData, epochs=10)
-
-for a,b in zip(inData, outData):
-    affichage_tableau(a)
-    print(b)
-    print()
-
-
-def simulation():
+def simulation(model, melange):
     tableau, fin = init(4), init(4)
-    tableau = melange_jeu(tableau, 40)
-    print(tableau)
+    tableau, pos = melange_jeu(tableau, melange, 15)
+    print(tableau, "\n")
     while not np.array_equal(tableau, fin):
         prediction = model.predict(tableau.reshape(-1,16))
         move = prediction.argmax()
-    
-        if move in move_possible(tableau):
-            tableau = jeu(tableau, move)
-            print(tableau)
-        else:
-            print()
-            affichage_tableau(tableau)
-            print("ERREUR !")
-            print(prediction)
-            print()
-            break
+        tableau, pos = jeu(tableau, move, pos)
+        affichage_tableau(tableau)
+        print()
 
 
-simulation()
+model = tf.keras.models.load_model("modelTaquin")
